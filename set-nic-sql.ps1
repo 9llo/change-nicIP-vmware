@@ -6,7 +6,7 @@ param(
     [string]$vCenterUser,
 
     [Parameter(Mandatory=$true)]
-    [string]$vCenterPass,
+    [SecureString]$vCenterPass,
 
     [Parameter(Mandatory=$true)]
     [string]$vmId,
@@ -27,17 +27,21 @@ param(
     [int]$nicIndex = 1,
 
     [Parameter(Mandatory=$false)]
+    [switch]$DesabilitarIPv6,
+
+    [Parameter(Mandatory=$false)]
     [switch]$DryRun
 )
 
 if ($DryRun) { Write-Host "[DRY-RUN] Modo simulacao ativo. Nenhuma alteracao sera aplicada.`n" }
 
 # Conectar ao vCenter (feito em ambos os modos)
+$vCenterPassPlain = (New-Object PSCredential 'x', $vCenterPass).GetNetworkCredential().Password
 Write-Host "Conectando ao vCenter $vCenter..."
-Connect-VIServer -Server $vCenter -User $vCenterUser -Password $vCenterPass | Out-Null
+Connect-VIServer -Server $vCenter -User $vCenterUser -Password $vCenterPassPlain | Out-Null
 Write-Host "Credenciais do vCenter validadas com sucesso."
 
-$vm = Get-VM -Id $vmId
+$vm = Get-VM -Id "VirtualMachine-$vmId"
 Write-Host "VM encontrada: $($vm.Name)"
 
 # Listar todas as NICs disponíveis
@@ -82,7 +86,7 @@ if ($DryRun) {
     Write-Host "=== O que seria alterado ==="
     Write-Host "  IP:     <atual> --> $novoIP"
     Write-Host "  Mascara: <atual> --> $mascara"
-    Write-Host "  IPv6:   <atual> --> Desabilitado"
+    Write-Host "  IPv6:   <atual> --> $(if ($DesabilitarIPv6) { 'Desabilitado' } else { 'sem alteracao' })"
     Write-Host "`n[DRY-RUN] Nenhuma alteracao foi aplicada. Execute sem -DryRun para confirmar."
     Disconnect-VIServer -Confirm:$false
     exit 0
@@ -99,7 +103,7 @@ if (-not `$iface) {
 
 Write-Host "Interface encontrada: `$iface"
 netsh interface ip set address name="`$iface" static $novoIP $mascara
-Disable-NetAdapterBinding -Name "`$iface" -ComponentID ms_tcpip6
+$(if ($DesabilitarIPv6) { 'Disable-NetAdapterBinding -Name "`$iface" -ComponentID ms_tcpip6' })
 
 Write-Host '=== Configuracao final ==='
 Get-NetIPAddress -InterfaceAlias "`$iface" -AddressFamily IPv4 | Select-Object IPAddress, PrefixLength | Format-Table -AutoSize

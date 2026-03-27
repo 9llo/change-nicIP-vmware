@@ -29,13 +29,14 @@ Script PowerShell para alterar o IP de uma NIC específica em VMs VMware via vCe
 | `vCenter`     | Sim         | —                 | Hostname ou IP do vCenter                             |
 | `vCenterUser` | Sim         | —                 | Usuário do vCenter                                    |
 | `vCenterPass` | Sim         | —                 | Senha do vCenter                                      |
-| `vmId`        | Sim         | —                 | ID da VM no vCenter (ex: `VirtualMachine-vm-123`)     |
+| `vmId`        | Sim         | —                 | ID da VM no vCenter (ex: `vm-123`)                    |
 | `guestUser`   | Sim         | —                 | Usuário administrador dentro da VM                    |
 | `guestPass`   | Sim         | —                 | Senha do usuário da VM                                |
 | `novoIP`      | Sim         | —                 | Novo endereço IP estático a configurar                |
 | `mascara`     | Não         | `255.255.255.252` | Máscara de sub-rede                                   |
-| `nicIndex`    | Não         | `1`               | Índice da NIC a alterar (0 = primeira NIC, 1 = segunda, etc.) |
-| `-DryRun`     | Não         | `$false`          | Simula a execução sem aplicar nenhuma alteração       |
+| `nicIndex`       | Não         | `1`               | Índice da NIC a alterar (0 = primeira NIC, 1 = segunda, etc.) |
+| `-DesabilitarIPv6` | Não      | `$false`          | Se informado, desabilita o IPv6 na interface          |
+| `-DryRun`        | Não         | `$false`          | Simula a execução sem aplicar nenhuma alteração       |
 
 ### Modo DryRun
 
@@ -64,6 +65,7 @@ O `vmId` pode ser obtido via PowerCLI:
 ```powershell
 Connect-VIServer -Server <vCenter> -User <user> -Password <pass>
 Get-VM -Name "<nome da VM>" | Select-Object Name, Id
+# O Id retornado será no formato VirtualMachine-vm-123 — passe apenas a parte vm-123
 ```
 
 ## Observações
