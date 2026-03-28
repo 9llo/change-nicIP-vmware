@@ -33,8 +33,10 @@ PowerShell script to change the IP address of a specific NIC on VMware VMs via v
 | `guestUser`        | Yes      | —                 | Administrator user inside the VM                                    |
 | `guestPass`        | Yes      | —                 | VM user password                                                    |
 | `novoIP`           | Yes      | —                 | New static IP address to configure                                  |
-| `mascara`          | No       | `255.255.255.252` | Subnet mask                                                         |
-| `nicIndex`         | No       | `1`               | Index of the NIC to change (0 = first NIC, 1 = second, etc.)       |
+| `netmask`          | Yes      | —                 | Subnet mask                                                         |
+| `nicIndex`         | Yes      | —                 | Index of the NIC to change (0 = first NIC, 1 = second, etc.)       |
+| `gateway`          | No       | —                 | Default gateway IP address                                          |
+| `dns`              | No       | —                 | DNS server(s) — accepts an array, e.g. `"8.8.8.8","1.1.1.1"`       |
 | `-DesabilitarIPv6` | No       | `$false`          | If provided, disables IPv6 on the interface                         |
 | `-DryRun`          | No       | `$false`          | Simulates execution without applying any changes                    |
 

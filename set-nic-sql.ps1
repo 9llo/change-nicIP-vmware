@@ -15,7 +15,9 @@
         -vmId        "vm-123" `
         -guestUser   "Administrator" `
         -guestPass   "P@ssw0rd" `
-        -novoIP      "10.0.0.1"
+        -novoIP      "10.0.0.1" `
+        -netmask     "255.255.255.252" `
+        -nicIndex    1
 
 .EXAMPLE
     # DryRun — preview what would change without applying anything
@@ -27,6 +29,8 @@
         -guestUser   "Administrator" `
         -guestPass   "P@ssw0rd" `
         -novoIP      "10.0.0.1" `
+        -netmask     "255.255.255.252" `
+        -nicIndex    1 `
         -DryRun
 
 .EXAMPLE
@@ -39,8 +43,10 @@
         -guestUser      "Administrator" `
         -guestPass      "P@ssw0rd" `
         -novoIP         "192.168.10.50" `
-        -mascara        "255.255.255.0" `
+        -netmask        "255.255.255.0" `
         -nicIndex       0 `
+        -gateway        "192.168.10.1" `
+        -dns            "8.8.8.8","1.1.1.1" `
         -DesabilitarIPv6
 
 .NOTES
@@ -77,11 +83,17 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$novoIP,
 
-    [Parameter(Mandatory=$false)]
-    [string]$mascara = '255.255.255.252',
+    [Parameter(Mandatory=$true)]
+    [string]$netmask,
+
+    [Parameter(Mandatory=$true)]
+    [int]$nicIndex,
 
     [Parameter(Mandatory=$false)]
-    [int]$nicIndex = 1,
+    [string]$gateway,
+
+    [Parameter(Mandatory=$false)]
+    [string[]]$dns,
 
     [Parameter(Mandatory=$false)]
     [switch]$DesabilitarIPv6,
@@ -130,6 +142,8 @@ if (-not `$iface) {
 Write-Host "Interface found: `$iface"
 Write-Host '=== CURRENT Configuration ==='
 Get-NetIPAddress -InterfaceAlias "`$iface" -AddressFamily IPv4 | Select-Object IPAddress, PrefixLength | Format-Table -AutoSize
+Get-NetRoute -InterfaceAlias "`$iface" -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Select-Object NextHop | Format-Table -AutoSize
+Get-DnsClientServerAddress -InterfaceAlias "`$iface" -AddressFamily IPv4 | Select-Object ServerAddresses | Format-Table -AutoSize
 Get-NetAdapterBinding -Name "`$iface" -ComponentID ms_tcpip6 | Select-Object Name, Enabled | Format-Table -AutoSize
 "@
 
@@ -142,7 +156,9 @@ Write-Host $readResult.ScriptOutput
 if ($DryRun) {
     Write-Host "=== What would be changed ==="
     Write-Host "  IP:      <current> --> $novoIP"
-    Write-Host "  Mask:    <current> --> $mascara"
+    Write-Host "  Mask:    <current> --> $netmask"
+    Write-Host "  Gateway: <current> --> $(if ($gateway) { $gateway } else { 'no change' })"
+    Write-Host "  DNS:     <current> --> $(if ($dns) { $dns -join ', ' } else { 'no change' })"
     Write-Host "  IPv6:    <current> --> $(if ($DesabilitarIPv6) { 'Disabled' } else { 'no change' })"
     Write-Host "`n[DRY-RUN] No changes were applied. Run without -DryRun to confirm."
     Disconnect-VIServer -Confirm:$false
@@ -150,6 +166,13 @@ if ($DryRun) {
 }
 
 # Apply script (only in real mode)
+$gatewayArg  = if ($gateway) { " $gateway" } else { '' }
+$dnsLine     = if ($dns) {
+    $quoted = ($dns | ForEach-Object { "'$_'" }) -join ','
+    "Set-DnsClientServerAddress -InterfaceAlias `"`$iface`" -ServerAddresses @($quoted)"
+} else { '' }
+$ipv6Line    = if ($DesabilitarIPv6) { 'Disable-NetAdapterBinding -Name "$iface" -ComponentID ms_tcpip6' } else { '' }
+
 $applyScript = @"
 `$iface = Get-NetAdapter | Where-Object { `$_.MacAddress -eq '$secondNicMac' } | Select-Object -ExpandProperty Name
 
@@ -159,11 +182,14 @@ if (-not `$iface) {
 }
 
 Write-Host "Interface found: `$iface"
-netsh interface ip set address name="`$iface" static $novoIP $mascara
-$(if ($DesabilitarIPv6) { 'Disable-NetAdapterBinding -Name "`$iface" -ComponentID ms_tcpip6' })
+netsh interface ip set address name="`$iface" static $novoIP $netmask$gatewayArg
+$dnsLine
+$ipv6Line
 
 Write-Host '=== Final Configuration ==='
 Get-NetIPAddress -InterfaceAlias "`$iface" -AddressFamily IPv4 | Select-Object IPAddress, PrefixLength | Format-Table -AutoSize
+Get-NetRoute -InterfaceAlias "`$iface" -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Select-Object NextHop | Format-Table -AutoSize
+Get-DnsClientServerAddress -InterfaceAlias "`$iface" -AddressFamily IPv4 | Select-Object ServerAddresses | Format-Table -AutoSize
 Get-NetAdapterBinding -Name "`$iface" -ComponentID ms_tcpip6 | Select-Object Name, Enabled | Format-Table -AutoSize
 "@
 
