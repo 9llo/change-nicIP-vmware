@@ -15,7 +15,7 @@
         -vmId        "vm-123" `
         -guestUser   "Administrator" `
         -guestPass   (Read-Host -AsSecureString "Guest password") `
-        -novoIP      "10.0.0.1" `
+        -IPAddress      "10.0.0.1" `
         -netmask     "255.255.255.252" `
         -nicIndex    1
 
@@ -28,7 +28,7 @@
         -vmId        "vm-123" `
         -guestUser   "Administrator" `
         -guestPass   (Read-Host -AsSecureString "Guest password") `
-        -novoIP      "10.0.0.1" `
+        -IPAddress      "10.0.0.1" `
         -netmask     "255.255.255.252" `
         -nicIndex    1 `
         -DryRun
@@ -42,12 +42,12 @@
         -vmId           "vm-456" `
         -guestUser      "Administrator" `
         -guestPass      (Read-Host -AsSecureString "Guest password") `
-        -novoIP         "192.168.10.50" `
+        -IPAddress         "192.168.10.50" `
         -netmask        "255.255.255.0" `
         -nicIndex       0 `
         -gateway        "192.168.10.1" `
         -dns            "8.8.8.8","1.1.1.1" `
-        -DesabilitarIPv6
+        -DisableIPv6
 
 .NOTES
     Requirements:
@@ -81,7 +81,7 @@ param(
     [SecureString]$guestPass,
 
     [Parameter(Mandatory=$true)]
-    [string]$novoIP,
+    [string]$IPAddress,
 
     [Parameter(Mandatory=$true)]
     [string]$netmask,
@@ -96,7 +96,7 @@ param(
     [string[]]$dns,
 
     [Parameter(Mandatory=$false)]
-    [switch]$DesabilitarIPv6,
+    [switch]$DisableIPv6,
 
     [Parameter(Mandatory=$false)]
     [switch]$DryRun
@@ -104,7 +104,7 @@ param(
 
 # Input validation
 $ipRegex = '^\d{1,3}(\.\d{1,3}){3}$'
-foreach ($pair in @(@('novoIP', $novoIP), @('netmask', $netmask))) {
+foreach ($pair in @(@('novoIP', $IPAddress), @('netmask', $netmask))) {
     if ($pair[1] -notmatch $ipRegex) {
         Write-Host "ERROR: '$($pair[1])' is not a valid IPv4 address for -$($pair[0])."
         exit 1
@@ -166,11 +166,11 @@ Get-NetAdapterBinding -Name "`$iface" -ComponentID ms_tcpip6 | Select-Object Nam
 
     if ($DryRun) {
         Write-Host "=== What would be changed ==="
-        Write-Host "  IP:      <current> --> $novoIP"
+        Write-Host "  IP:      <current> --> $IPAddress"
         Write-Host "  Mask:    <current> --> $netmask"
         Write-Host "  Gateway: <current> --> $(if ($gateway) { $gateway } else { 'no change' })"
         Write-Host "  DNS:     <current> --> $(if ($dns) { $dns -join ', ' } else { 'no change' })"
-        Write-Host "  IPv6:    <current> --> $(if ($DesabilitarIPv6) { 'Disabled' } else { 'no change' })"
+        Write-Host "  IPv6:    <current> --> $(if ($DisableIPv6) { 'Disabled' } else { 'no change' })"
         Write-Host "`n[DRY-RUN] No changes were applied. Run without -DryRun to confirm."
         Disconnect-VIServer -Confirm:$false
         exit 0
@@ -182,7 +182,7 @@ Get-NetAdapterBinding -Name "`$iface" -ComponentID ms_tcpip6 | Select-Object Nam
         $quoted = ($dns | ForEach-Object { "'$_'" }) -join ','
         "Set-DnsClientServerAddress -InterfaceAlias `$iface -ServerAddresses @($quoted)"
     } else { '' }
-    $ipv6Line   = if ($DesabilitarIPv6) { 'Disable-NetAdapterBinding -Name $iface -ComponentID ms_tcpip6' } else { '' }
+    $ipv6Line   = if ($DisableIPv6) { 'Disable-NetAdapterBinding -Name $iface -ComponentID ms_tcpip6' } else { '' }
 
     # Apply script (only in real mode)
     $applyScript = @"
@@ -194,7 +194,7 @@ if (-not `$iface) {
 }
 
 Write-Host "Interface found: `$iface"
-netsh interface ip set address name="`$iface" static $novoIP $netmask$gatewayArg
+netsh interface ip set address name="`$iface" static $IPAddress $netmask$gatewayArg
 $dnsLine
 $ipv6Line
 

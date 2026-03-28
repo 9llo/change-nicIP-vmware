@@ -19,7 +19,7 @@ PowerShell script to change the IP address of a specific NIC on VMware VMs via v
     -vmId          "<VM ID (e.g.: VirtualMachine-vm-123)>" `
     -guestUser     "<VM local user>" `
     -guestPass     "<VM local password>" `
-    -novoIP        "<new static IP>"
+    -IPAddress        "<new static IP>"
 ```
 
 ### Parameters
@@ -32,12 +32,12 @@ PowerShell script to change the IP address of a specific NIC on VMware VMs via v
 | `vmId`             | Yes      | —                 | VM ID in vCenter (e.g.: `vm-123`)                                   |
 | `guestUser`        | Yes      | —                 | Administrator user inside the VM                                    |
 | `guestPass`        | Yes      | —                 | VM user password                                                    |
-| `novoIP`           | Yes      | —                 | New static IP address to configure                                  |
+| `IPAddress`           | Yes      | —                 | New static IP address to configure                                  |
 | `netmask`          | Yes      | —                 | Subnet mask                                                         |
 | `nicIndex`         | Yes      | —                 | Index of the NIC to change (0 = first NIC, 1 = second, etc.)       |
 | `gateway`          | No       | —                 | Default gateway IP address                                          |
 | `dns`              | No       | —                 | DNS server(s) — accepts an array, e.g. `"8.8.8.8","1.1.1.1"`       |
-| `-DesabilitarIPv6` | No       | `$false`          | If provided, disables IPv6 on the interface                         |
+| `-DisableIPv6` | No       | `$false`          | If provided, disables IPv6 on the interface                         |
 | `-DryRun`          | No       | `$false`          | Simulates execution without applying any changes                    |
 
 ### DryRun Mode
@@ -45,7 +45,7 @@ PowerShell script to change the IP address of a specific NIC on VMware VMs via v
 Use `-DryRun` to validate credentials and preview the current configuration without making any changes:
 
 ```powershell
-.\set-nic-sql.ps1 ... -novoIP "10.0.0.1" -DryRun
+.\set-nic-sql.ps1 ... -IPAddress "10.0.0.1" -DryRun
 ```
 
 ## What the script does
@@ -73,7 +73,7 @@ Get-VM -Name "<VM name>" | Select-Object Name, Id
 ## Notes
 
 - The script uses `netsh interface ip set address` to apply the static IP, ensuring compatibility with Windows Server
-- IPv6 can be optionally disabled on the changed interface using `-DesabilitarIPv6`
+- IPv6 can be optionally disabled on the changed interface using `-DisableIPv6`
 - The NIC is identified by its MAC address, avoiding ambiguity with the interface name inside the guest
 
 ---

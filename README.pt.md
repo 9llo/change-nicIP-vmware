@@ -19,7 +19,7 @@ Script PowerShell para alterar o IP de uma NIC específica em VMs VMware via vCe
     -vmId          "<ID da VM (ex: VirtualMachine-vm-123)>" `
     -guestUser     "<usuario local da VM>" `
     -guestPass     "<senha local da VM>" `
-    -novoIP        "<novo IP estático>"
+    -IPAddress        "<novo IP estático>"
 ```
 
 ### Parâmetros
@@ -32,12 +32,12 @@ Script PowerShell para alterar o IP de uma NIC específica em VMs VMware via vCe
 | `vmId`             | Sim         | —                 | ID da VM no vCenter (ex: `vm-123`)                                  |
 | `guestUser`        | Sim         | —                 | Usuário administrador dentro da VM                                  |
 | `guestPass`        | Sim         | —                 | Senha do usuário da VM                                              |
-| `novoIP`           | Sim         | —                 | Novo endereço IP estático a configurar                              |
+| `IPAddress`           | Sim         | —                 | Novo endereço IP estático a configurar                              |
 | `netmask`          | Sim         | —                 | Máscara de sub-rede                                                 |
 | `nicIndex`         | Sim         | —                 | Índice da NIC a alterar (0 = primeira NIC, 1 = segunda, etc.)      |
 | `gateway`          | Não         | —                 | Endereço IP do gateway padrão                                       |
 | `dns`              | Não         | —                 | Servidor(es) DNS — aceita array, ex: `"8.8.8.8","1.1.1.1"`         |
-| `-DesabilitarIPv6` | Não         | `$false`          | Se informado, desabilita o IPv6 na interface                        |
+| `-DisableIPv6` | Não         | `$false`          | Se informado, desabilita o IPv6 na interface                        |
 | `-DryRun`          | Não         | `$false`          | Simula a execução sem aplicar nenhuma alteração                     |
 
 ### Modo DryRun
@@ -45,7 +45,7 @@ Script PowerShell para alterar o IP de uma NIC específica em VMs VMware via vCe
 Use `-DryRun` para validar credenciais e visualizar a configuração atual sem realizar nenhuma alteração:
 
 ```powershell
-.\set-nic-sql.ps1 ... -novoIP "10.0.0.1" -DryRun
+.\set-nic-sql.ps1 ... -IPAddress "10.0.0.1" -DryRun
 ```
 
 ## O que o script faz
@@ -56,7 +56,7 @@ Use `-DryRun` para validar credenciais e visualizar a configuração atual sem r
 4. Lê e exibe a configuração de IP atual da NIC selecionada (via `Invoke-VMScript`)
 5. Se não estiver em modo DryRun:
    - Define o novo IP estático com a máscara especificada
-   - Desabilita opcionalmente o protocolo IPv6 na interface com `-DesabilitarIPv6`
+   - Desabilita opcionalmente o protocolo IPv6 na interface com `-DisableIPv6`
    - Exibe a configuração final aplicada
 6. Desconecta do vCenter
 
@@ -73,7 +73,7 @@ Get-VM -Name "<nome da VM>" | Select-Object Name, Id
 ## Observações
 
 - O script usa `netsh interface ip set address` para aplicar o IP estático, garantindo compatibilidade com Windows Server
-- O IPv6 pode ser desabilitado opcionalmente na interface alterada usando `-DesabilitarIPv6`
+- O IPv6 pode ser desabilitado opcionalmente na interface alterada usando `-DisableIPv6`
 - A NIC é identificada pelo endereço MAC, evitando ambiguidade com o nome da interface dentro do guest
 
 ---
