@@ -1,3 +1,60 @@
+<#
+.SYNOPSIS
+    Changes the IP address of a specific NIC on a VMware VM via vCenter.
+
+.DESCRIPTION
+    Uses VMware PowerCLI to locate a VM by ID, identify a NIC by index, and apply
+    a new static IP address inside the guest OS via Invoke-VMScript (netsh).
+
+.EXAMPLE
+    # Basic usage — change the second NIC (index 1) IP
+    .\set-nic-sql.ps1 `
+        -vCenter     "vcenter.corp.local" `
+        -vCenterUser "administrator@vsphere.local" `
+        -vCenterPass (Read-Host -AsSecureString "vCenter password") `
+        -vmId        "vm-123" `
+        -guestUser   "Administrator" `
+        -guestPass   "P@ssw0rd" `
+        -novoIP      "10.0.0.1"
+
+.EXAMPLE
+    # DryRun — preview what would change without applying anything
+    .\set-nic-sql.ps1 `
+        -vCenter     "vcenter.corp.local" `
+        -vCenterUser "administrator@vsphere.local" `
+        -vCenterPass (Read-Host -AsSecureString "vCenter password") `
+        -vmId        "vm-123" `
+        -guestUser   "Administrator" `
+        -guestPass   "P@ssw0rd" `
+        -novoIP      "10.0.0.1" `
+        -DryRun
+
+.EXAMPLE
+    # Change first NIC (index 0), custom mask, and disable IPv6
+    .\set-nic-sql.ps1 `
+        -vCenter        "vcenter.corp.local" `
+        -vCenterUser    "administrator@vsphere.local" `
+        -vCenterPass    (Read-Host -AsSecureString "vCenter password") `
+        -vmId           "vm-456" `
+        -guestUser      "Administrator" `
+        -guestPass      "P@ssw0rd" `
+        -novoIP         "192.168.10.50" `
+        -mascara        "255.255.255.0" `
+        -nicIndex       0 `
+        -DesabilitarIPv6
+
+.NOTES
+    Requirements:
+      - PowerShell 5.1+
+      - VMware PowerCLI (Install-Module VMware.PowerCLI)
+      - vCenter permissions: Invoke-VMScript on the target VM
+      - Guest OS: Windows Server (uses netsh)
+
+    To find the VM ID via PowerCLI:
+      Connect-VIServer -Server <vCenter> -User <user> -Password <pass>
+      Get-VM -Name "<VM name>" | Select-Object Name, Id
+      # Pass only the "vm-123" part (without "VirtualMachine-")
+#>
 param(
     [Parameter(Mandatory=$true)]
     [string]$vCenter,
@@ -33,27 +90,27 @@ param(
     [switch]$DryRun
 )
 
-if ($DryRun) { Write-Host "[DRY-RUN] Modo simulacao ativo. Nenhuma alteracao sera aplicada.`n" }
+if ($DryRun) { Write-Host "[DRY-RUN] Simulation mode active. No changes will be applied.`n" }
 
-# Conectar ao vCenter (feito em ambos os modos)
+# Connect to vCenter (done in both modes)
 $vCenterPassPlain = (New-Object PSCredential 'x', $vCenterPass).GetNetworkCredential().Password
-Write-Host "Conectando ao vCenter $vCenter..."
+Write-Host "Connecting to vCenter $vCenter..."
 Connect-VIServer -Server $vCenter -User $vCenterUser -Password $vCenterPassPlain | Out-Null
-Write-Host "Credenciais do vCenter validadas com sucesso."
+Write-Host "vCenter credentials validated successfully."
 
 $vm = Get-VM -Id "VirtualMachine-$vmId"
-Write-Host "VM encontrada: $($vm.Name)"
+Write-Host "VM found: $($vm.Name)"
 
-# Listar todas as NICs disponíveis
+# List all available NICs
 $allNics = Get-NetworkAdapter -VM $vm | Sort-Object Name
-Write-Host "`n=== NICs disponíveis ==="
+Write-Host "`n=== Available NICs ==="
 for ($i = 0; $i -lt $allNics.Count; $i++) {
-    $marker = if ($i -eq $nicIndex) { ' <-- selecionada' } else { '' }
+    $marker = if ($i -eq $nicIndex) { ' <-- selected' } else { '' }
     Write-Host "[$i] $($allNics[$i].Name) - MAC: $($allNics[$i].MacAddress)$marker"
 }
 
 if ($nicIndex -lt 0 -or $nicIndex -ge $allNics.Count) {
-    Write-Host "ERRO: nicIndex '$nicIndex' invalido. Use um valor entre 0 e $($allNics.Count - 1)."
+    Write-Host "ERROR: nicIndex '$nicIndex' is invalid. Use a value between 0 and $($allNics.Count - 1)."
     Disconnect-VIServer -Confirm:$false
     exit 1
 }
@@ -61,51 +118,51 @@ if ($nicIndex -lt 0 -or $nicIndex -ge $allNics.Count) {
 $secondNicMac = $allNics[$nicIndex].MacAddress
 $secondNicMac = $secondNicMac.Replace(':', '-').ToUpper()
 
-# Script de leitura (executado em ambos os modos para mostrar config atual)
+# Read script (runs in both modes to show current config)
 $readScript = @"
 `$iface = Get-NetAdapter | Where-Object { `$_.MacAddress -eq '$secondNicMac' } | Select-Object -ExpandProperty Name
 
 if (-not `$iface) {
-    Write-Host "ERRO: Interface com MAC $secondNicMac nao encontrada."
+    Write-Host "ERROR: Interface with MAC $secondNicMac not found."
     exit 1
 }
 
-Write-Host "Interface encontrada: `$iface"
-Write-Host '=== Configuracao ATUAL ==='
+Write-Host "Interface found: `$iface"
+Write-Host '=== CURRENT Configuration ==='
 Get-NetIPAddress -InterfaceAlias "`$iface" -AddressFamily IPv4 | Select-Object IPAddress, PrefixLength | Format-Table -AutoSize
 Get-NetAdapterBinding -Name "`$iface" -ComponentID ms_tcpip6 | Select-Object Name, Enabled | Format-Table -AutoSize
 "@
 
 $guestCred = New-Object PSCredential($guestUser, (ConvertTo-SecureString $guestPass -AsPlainText -Force))
 
-Write-Host "`nValidando credenciais da VM e lendo configuracao atual..."
+Write-Host "`nValidating VM credentials and reading current configuration..."
 $readResult = Invoke-VMScript -VM $vm -GuestCredential $guestCred -ScriptText $readScript -ScriptType PowerShell
 Write-Host $readResult.ScriptOutput
 
 if ($DryRun) {
-    Write-Host "=== O que seria alterado ==="
-    Write-Host "  IP:     <atual> --> $novoIP"
-    Write-Host "  Mascara: <atual> --> $mascara"
-    Write-Host "  IPv6:   <atual> --> $(if ($DesabilitarIPv6) { 'Desabilitado' } else { 'sem alteracao' })"
-    Write-Host "`n[DRY-RUN] Nenhuma alteracao foi aplicada. Execute sem -DryRun para confirmar."
+    Write-Host "=== What would be changed ==="
+    Write-Host "  IP:      <current> --> $novoIP"
+    Write-Host "  Mask:    <current> --> $mascara"
+    Write-Host "  IPv6:    <current> --> $(if ($DesabilitarIPv6) { 'Disabled' } else { 'no change' })"
+    Write-Host "`n[DRY-RUN] No changes were applied. Run without -DryRun to confirm."
     Disconnect-VIServer -Confirm:$false
     exit 0
 }
 
-# Script de alteracao (somente no modo real)
+# Apply script (only in real mode)
 $applyScript = @"
 `$iface = Get-NetAdapter | Where-Object { `$_.MacAddress -eq '$secondNicMac' } | Select-Object -ExpandProperty Name
 
 if (-not `$iface) {
-    Write-Host "ERRO: Interface com MAC $secondNicMac nao encontrada."
+    Write-Host "ERROR: Interface with MAC $secondNicMac not found."
     exit 1
 }
 
-Write-Host "Interface encontrada: `$iface"
+Write-Host "Interface found: `$iface"
 netsh interface ip set address name="`$iface" static $novoIP $mascara
 $(if ($DesabilitarIPv6) { 'Disable-NetAdapterBinding -Name "`$iface" -ComponentID ms_tcpip6' })
 
-Write-Host '=== Configuracao final ==='
+Write-Host '=== Final Configuration ==='
 Get-NetIPAddress -InterfaceAlias "`$iface" -AddressFamily IPv4 | Select-Object IPAddress, PrefixLength | Format-Table -AutoSize
 Get-NetAdapterBinding -Name "`$iface" -ComponentID ms_tcpip6 | Select-Object Name, Enabled | Format-Table -AutoSize
 "@

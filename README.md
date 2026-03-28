@@ -1,75 +1,79 @@
 # change-nicIP-vmware
 
-Script PowerShell para alterar o IP de uma NIC específica em VMs VMware via vCenter, utilizando VMware PowerCLI.
+PowerShell script to change the IP address of a specific NIC on VMware VMs via vCenter, using VMware PowerCLI.
 
-## Pré-requisitos
+## Prerequisites
 
 - PowerShell 5.1+
-- [VMware PowerCLI](https://developer.vmware.com/powercli) instalado
-- Acesso ao vCenter com permissões de `Invoke-VMScript` na VM alvo
-- Credenciais de administrador local (ou domínio) na VM guest
+- [VMware PowerCLI](https://developer.vmware.com/powercli) installed
+- vCenter access with `Invoke-VMScript` permissions on the target VM
+- Local (or domain) administrator credentials on the guest VM
 
-## Uso
+## Usage
 
 ```powershell
 .\set-nic-sql.ps1 `
-    -vCenter       "<endereço do vCenter>" `
-    -vCenterUser   "<usuario>" `
-    -vCenterPass   "<senha>" `
-    -vmId          "<ID da VM (ex: VirtualMachine-vm-123)>" `
-    -guestUser     "<usuario local da VM>" `
-    -guestPass     "<senha local da VM>" `
-    -novoIP        "<novo IP estático>"
+    -vCenter       "<vCenter address>" `
+    -vCenterUser   "<username>" `
+    -vCenterPass   "<password>" `
+    -vmId          "<VM ID (e.g.: VirtualMachine-vm-123)>" `
+    -guestUser     "<VM local user>" `
+    -guestPass     "<VM local password>" `
+    -novoIP        "<new static IP>"
 ```
 
-### Parâmetros
+### Parameters
 
-| Parâmetro     | Obrigatório | Padrão            | Descrição                                             |
-|---------------|-------------|-------------------|-------------------------------------------------------|
-| `vCenter`     | Sim         | —                 | Hostname ou IP do vCenter                             |
-| `vCenterUser` | Sim         | —                 | Usuário do vCenter                                    |
-| `vCenterPass` | Sim         | —                 | Senha do vCenter                                      |
-| `vmId`        | Sim         | —                 | ID da VM no vCenter (ex: `vm-123`)                    |
-| `guestUser`   | Sim         | —                 | Usuário administrador dentro da VM                    |
-| `guestPass`   | Sim         | —                 | Senha do usuário da VM                                |
-| `novoIP`      | Sim         | —                 | Novo endereço IP estático a configurar                |
-| `mascara`     | Não         | `255.255.255.252` | Máscara de sub-rede                                   |
-| `nicIndex`       | Não         | `1`               | Índice da NIC a alterar (0 = primeira NIC, 1 = segunda, etc.) |
-| `-DesabilitarIPv6` | Não      | `$false`          | Se informado, desabilita o IPv6 na interface          |
-| `-DryRun`        | Não         | `$false`          | Simula a execução sem aplicar nenhuma alteração       |
+| Parameter          | Required | Default           | Description                                                         |
+|--------------------|----------|-------------------|---------------------------------------------------------------------|
+| `vCenter`          | Yes      | —                 | vCenter hostname or IP                                              |
+| `vCenterUser`      | Yes      | —                 | vCenter username                                                    |
+| `vCenterPass`      | Yes      | —                 | vCenter password                                                    |
+| `vmId`             | Yes      | —                 | VM ID in vCenter (e.g.: `vm-123`)                                   |
+| `guestUser`        | Yes      | —                 | Administrator user inside the VM                                    |
+| `guestPass`        | Yes      | —                 | VM user password                                                    |
+| `novoIP`           | Yes      | —                 | New static IP address to configure                                  |
+| `mascara`          | No       | `255.255.255.252` | Subnet mask                                                         |
+| `nicIndex`         | No       | `1`               | Index of the NIC to change (0 = first NIC, 1 = second, etc.)       |
+| `-DesabilitarIPv6` | No       | `$false`          | If provided, disables IPv6 on the interface                         |
+| `-DryRun`          | No       | `$false`          | Simulates execution without applying any changes                    |
 
-### Modo DryRun
+### DryRun Mode
 
-Use `-DryRun` para validar credenciais e visualizar a configuração atual sem realizar nenhuma alteração:
+Use `-DryRun` to validate credentials and preview the current configuration without making any changes:
 
 ```powershell
 .\set-nic-sql.ps1 ... -novoIP "10.0.0.1" -DryRun
 ```
 
-## O que o script faz
+## What the script does
 
-1. Conecta ao vCenter e valida as credenciais
-2. Localiza a VM pelo ID informado
-3. Lista todas as NICs disponíveis na VM, indicando qual será alterada
-4. Lê e exibe a configuração de IP atual da NIC selecionada (via `Invoke-VMScript`)
-5. Se não estiver em modo DryRun:
-   - Define o novo IP estático com a máscara especificada
-   - Desabilita o protocolo IPv6 na interface
-   - Exibe a configuração final aplicada
-6. Desconecta do vCenter
+1. Connects to vCenter and validates credentials
+2. Locates the VM by the provided ID
+3. Lists all available NICs on the VM, indicating which one will be changed
+4. Reads and displays the current IP configuration of the selected NIC (via `Invoke-VMScript`)
+5. If not in DryRun mode:
+   - Sets the new static IP with the specified subnet mask
+   - Optionally disables the IPv6 protocol on the interface
+   - Displays the final applied configuration
+6. Disconnects from vCenter
 
-## Identificando o ID da VM
+## Finding the VM ID
 
-O `vmId` pode ser obtido via PowerCLI:
+The `vmId` can be obtained via PowerCLI:
 
 ```powershell
 Connect-VIServer -Server <vCenter> -User <user> -Password <pass>
-Get-VM -Name "<nome da VM>" | Select-Object Name, Id
-# O Id retornado será no formato VirtualMachine-vm-123 — passe apenas a parte vm-123
+Get-VM -Name "<VM name>" | Select-Object Name, Id
+# The returned Id will be in the format VirtualMachine-vm-123 — pass only the vm-123 part
 ```
 
-## Observações
+## Notes
 
-- O script usa `netsh interface ip set address` para aplicar o IP estático, garantindo compatibilidade com Windows Server
-- IPv6 é desabilitado automaticamente na interface alterada
-- A NIC é identificada pelo endereço MAC, evitando ambiguidade com o nome da interface dentro do guest
+- The script uses `netsh interface ip set address` to apply the static IP, ensuring compatibility with Windows Server
+- IPv6 can be optionally disabled on the changed interface using `-DesabilitarIPv6`
+- The NIC is identified by its MAC address, avoiding ambiguity with the interface name inside the guest
+
+---
+
+> Portuguese version: [README.pt.md](README.pt.md)
