@@ -14,7 +14,7 @@
         -vCenterPass (Read-Host -AsSecureString "vCenter password") `
         -vmId        "vm-123" `
         -guestUser   "Administrator" `
-        -guestPass   "P@ssw0rd" `
+        -guestPass   (Read-Host -AsSecureString "Guest password") `
         -novoIP      "10.0.0.1" `
         -netmask     "255.255.255.252" `
         -nicIndex    1
@@ -27,21 +27,21 @@
         -vCenterPass (Read-Host -AsSecureString "vCenter password") `
         -vmId        "vm-123" `
         -guestUser   "Administrator" `
-        -guestPass   "P@ssw0rd" `
+        -guestPass   (Read-Host -AsSecureString "Guest password") `
         -novoIP      "10.0.0.1" `
         -netmask     "255.255.255.252" `
         -nicIndex    1 `
         -DryRun
 
 .EXAMPLE
-    # Change first NIC (index 0), custom mask, and disable IPv6
+    # Change first NIC (index 0), custom mask, gateway, DNS, and disable IPv6
     .\set-nic-sql.ps1 `
         -vCenter        "vcenter.corp.local" `
         -vCenterUser    "administrator@vsphere.local" `
         -vCenterPass    (Read-Host -AsSecureString "vCenter password") `
         -vmId           "vm-456" `
         -guestUser      "Administrator" `
-        -guestPass      "P@ssw0rd" `
+        -guestPass      (Read-Host -AsSecureString "Guest password") `
         -novoIP         "192.168.10.50" `
         -netmask        "255.255.255.0" `
         -nicIndex       0 `
@@ -78,7 +78,7 @@ param(
     [string]$guestUser,
 
     [Parameter(Mandatory=$true)]
-    [string]$guestPass,
+    [SecureString]$guestPass,
 
     [Parameter(Mandatory=$true)]
     [string]$novoIP,
@@ -102,40 +102,51 @@ param(
     [switch]$DryRun
 )
 
-if ($DryRun) { Write-Host "[DRY-RUN] Simulation mode active. No changes will be applied.`n" }
-
-# Connect to vCenter (done in both modes)
-$vCenterPassPlain = (New-Object PSCredential 'x', $vCenterPass).GetNetworkCredential().Password
-Write-Host "Connecting to vCenter $vCenter..."
-Connect-VIServer -Server $vCenter -User $vCenterUser -Password $vCenterPassPlain | Out-Null
-Write-Host "vCenter credentials validated successfully."
-
-$vm = Get-VM -Id "VirtualMachine-$vmId"
-Write-Host "VM found: $($vm.Name)"
-
-# List all available NICs
-$allNics = Get-NetworkAdapter -VM $vm | Sort-Object Name
-Write-Host "`n=== Available NICs ==="
-for ($i = 0; $i -lt $allNics.Count; $i++) {
-    $marker = if ($i -eq $nicIndex) { ' <-- selected' } else { '' }
-    Write-Host "[$i] $($allNics[$i].Name) - MAC: $($allNics[$i].MacAddress)$marker"
+# Input validation
+$ipRegex = '^\d{1,3}(\.\d{1,3}){3}$'
+foreach ($pair in @(@('novoIP', $novoIP), @('netmask', $netmask))) {
+    if ($pair[1] -notmatch $ipRegex) {
+        Write-Host "ERROR: '$($pair[1])' is not a valid IPv4 address for -$($pair[0])."
+        exit 1
+    }
 }
-
-if ($nicIndex -lt 0 -or $nicIndex -ge $allNics.Count) {
-    Write-Host "ERROR: nicIndex '$nicIndex' is invalid. Use a value between 0 and $($allNics.Count - 1)."
-    Disconnect-VIServer -Confirm:$false
+if ($gateway -and $gateway -notmatch $ipRegex) {
+    Write-Host "ERROR: '$gateway' is not a valid IPv4 address for -gateway."
     exit 1
 }
 
-$secondNicMac = $allNics[$nicIndex].MacAddress
-$secondNicMac = $secondNicMac.Replace(':', '-').ToUpper()
+if ($DryRun) { Write-Host "[DRY-RUN] Simulation mode active. No changes will be applied.`n" }
 
-# Read script (runs in both modes to show current config)
-$readScript = @"
-`$iface = Get-NetAdapter | Where-Object { `$_.MacAddress -eq '$secondNicMac' } | Select-Object -ExpandProperty Name
+try {
+    # Connect to vCenter
+    $vCenterPassPlain = (New-Object PSCredential 'x', $vCenterPass).GetNetworkCredential().Password
+    Write-Host "Connecting to vCenter $vCenter..."
+    Connect-VIServer -Server $vCenter -User $vCenterUser -Password $vCenterPassPlain | Out-Null
+    Write-Host "vCenter credentials validated successfully."
+
+    $vm = Get-VM -Id "VirtualMachine-$vmId"
+    Write-Host "VM found: $($vm.Name)"
+
+    # List all available NICs
+    $allNics = Get-NetworkAdapter -VM $vm | Sort-Object Name
+    Write-Host "`n=== Available NICs ==="
+    for ($i = 0; $i -lt $allNics.Count; $i++) {
+        $marker = if ($i -eq $nicIndex) { ' <-- selected' } else { '' }
+        Write-Host "[$i] $($allNics[$i].Name) - MAC: $($allNics[$i].MacAddress)$marker"
+    }
+
+    if ($nicIndex -lt 0 -or $nicIndex -ge $allNics.Count) {
+        throw "nicIndex '$nicIndex' is invalid. Use a value between 0 and $($allNics.Count - 1)."
+    }
+
+    $nicMac = $allNics[$nicIndex].MacAddress.Replace(':', '-').ToUpper()
+
+    # Read script (runs in both modes to show current config)
+    $readScript = @"
+`$iface = Get-NetAdapter | Where-Object { `$_.MacAddress -eq '$nicMac' } | Select-Object -ExpandProperty Name
 
 if (-not `$iface) {
-    Write-Host "ERROR: Interface with MAC $secondNicMac not found."
+    Write-Host "ERROR: Interface with MAC $nicMac not found."
     exit 1
 }
 
@@ -147,37 +158,38 @@ Get-DnsClientServerAddress -InterfaceAlias "`$iface" -AddressFamily IPv4 | Selec
 Get-NetAdapterBinding -Name "`$iface" -ComponentID ms_tcpip6 | Select-Object Name, Enabled | Format-Table -AutoSize
 "@
 
-$guestCred = New-Object PSCredential($guestUser, (ConvertTo-SecureString $guestPass -AsPlainText -Force))
+    $guestCred = New-Object PSCredential($guestUser, $guestPass)
 
-Write-Host "`nValidating VM credentials and reading current configuration..."
-$readResult = Invoke-VMScript -VM $vm -GuestCredential $guestCred -ScriptText $readScript -ScriptType PowerShell
-Write-Host $readResult.ScriptOutput
+    Write-Host "`nValidating VM credentials and reading current configuration..."
+    $readResult = Invoke-VMScript -VM $vm -GuestCredential $guestCred -ScriptText $readScript -ScriptType PowerShell
+    Write-Host $readResult.ScriptOutput
 
-if ($DryRun) {
-    Write-Host "=== What would be changed ==="
-    Write-Host "  IP:      <current> --> $novoIP"
-    Write-Host "  Mask:    <current> --> $netmask"
-    Write-Host "  Gateway: <current> --> $(if ($gateway) { $gateway } else { 'no change' })"
-    Write-Host "  DNS:     <current> --> $(if ($dns) { $dns -join ', ' } else { 'no change' })"
-    Write-Host "  IPv6:    <current> --> $(if ($DesabilitarIPv6) { 'Disabled' } else { 'no change' })"
-    Write-Host "`n[DRY-RUN] No changes were applied. Run without -DryRun to confirm."
-    Disconnect-VIServer -Confirm:$false
-    exit 0
-}
+    if ($DryRun) {
+        Write-Host "=== What would be changed ==="
+        Write-Host "  IP:      <current> --> $novoIP"
+        Write-Host "  Mask:    <current> --> $netmask"
+        Write-Host "  Gateway: <current> --> $(if ($gateway) { $gateway } else { 'no change' })"
+        Write-Host "  DNS:     <current> --> $(if ($dns) { $dns -join ', ' } else { 'no change' })"
+        Write-Host "  IPv6:    <current> --> $(if ($DesabilitarIPv6) { 'Disabled' } else { 'no change' })"
+        Write-Host "`n[DRY-RUN] No changes were applied. Run without -DryRun to confirm."
+        Disconnect-VIServer -Confirm:$false
+        exit 0
+    }
 
-# Apply script (only in real mode)
-$gatewayArg  = if ($gateway) { " $gateway" } else { '' }
-$dnsLine     = if ($dns) {
-    $quoted = ($dns | ForEach-Object { "'$_'" }) -join ','
-    "Set-DnsClientServerAddress -InterfaceAlias `"`$iface`" -ServerAddresses @($quoted)"
-} else { '' }
-$ipv6Line    = if ($DesabilitarIPv6) { 'Disable-NetAdapterBinding -Name "$iface" -ComponentID ms_tcpip6' } else { '' }
+    # Build optional lines for the apply script
+    $gatewayArg = if ($gateway) { " $gateway" } else { '' }
+    $dnsLine    = if ($dns) {
+        $quoted = ($dns | ForEach-Object { "'$_'" }) -join ','
+        "Set-DnsClientServerAddress -InterfaceAlias `$iface -ServerAddresses @($quoted)"
+    } else { '' }
+    $ipv6Line   = if ($DesabilitarIPv6) { 'Disable-NetAdapterBinding -Name $iface -ComponentID ms_tcpip6' } else { '' }
 
-$applyScript = @"
-`$iface = Get-NetAdapter | Where-Object { `$_.MacAddress -eq '$secondNicMac' } | Select-Object -ExpandProperty Name
+    # Apply script (only in real mode)
+    $applyScript = @"
+`$iface = Get-NetAdapter | Where-Object { `$_.MacAddress -eq '$nicMac' } | Select-Object -ExpandProperty Name
 
 if (-not `$iface) {
-    Write-Host "ERROR: Interface with MAC $secondNicMac not found."
+    Write-Host "ERROR: Interface with MAC $nicMac not found."
     exit 1
 }
 
@@ -193,7 +205,17 @@ Get-DnsClientServerAddress -InterfaceAlias "`$iface" -AddressFamily IPv4 | Selec
 Get-NetAdapterBinding -Name "`$iface" -ComponentID ms_tcpip6 | Select-Object Name, Enabled | Format-Table -AutoSize
 "@
 
-$applyResult = Invoke-VMScript -VM $vm -GuestCredential $guestCred -ScriptText $applyScript -ScriptType PowerShell
-Write-Host $applyResult.ScriptOutput
+    $applyResult = Invoke-VMScript -VM $vm -GuestCredential $guestCred -ScriptText $applyScript -ScriptType PowerShell
+    Write-Host $applyResult.ScriptOutput
 
-Disconnect-VIServer -Confirm:$false
+    if ($applyResult.ExitCode -ne 0) {
+        throw "Guest script exited with code $($applyResult.ExitCode). Check the output above for details."
+    }
+
+    Disconnect-VIServer -Confirm:$false
+
+} catch {
+    Write-Host "ERROR: $_"
+    if ($global:DefaultVIServers.Count -gt 0) { Disconnect-VIServer -Confirm:$false }
+    exit 1
+}
