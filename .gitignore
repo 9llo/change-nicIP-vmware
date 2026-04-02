@@ -1,9 +1,10 @@
 # PowerShell
 *.ps1xml
 
-# IDE
+# IDE / tools
 .vscode/
 .idea/
+.claude/
 
 # OS
 Thumbs.db
